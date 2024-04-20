@@ -44,19 +44,28 @@ pub async fn poll_oneoff<'a>(poll: &mut Poll<'a>) -> Result<(), Error> {
             poll_fds = tracing::field::debug(&pollfds),
             "poll"
         );
+
+        //println!("Polling: {:?}", pollfds);
+
         match rustix::event::poll(&mut pollfds, poll_timeout) {
-            Ok(ready) => break ready,
+            Ok(ready) => {
+                //println!("Poll ready: {}", ready);
+                break ready;
+            }
             Err(rustix::io::Errno::INTR) => continue,
             Err(err) => return Err(std::io::Error::from(err).into()),
         }
     };
     if ready > 0 {
-        for (rwsub, pollfd) in poll.rw_subscriptions().zip(pollfds.into_iter()) {
+        for (i, (rwsub_general, pollfd)) in
+            poll.rw_subscriptions().zip(pollfds.into_iter()).enumerate()
+        {
             let revents = pollfd.revents();
-            let (nbytes, rwsub) = match rwsub {
+            let (nbytes, rwsub) = match rwsub_general {
                 Subscription::Read(sub) => {
-                    let ready = sub.file.num_ready_bytes()?;
-                    (std::cmp::max(ready, 1), sub)
+                    //let ready = sub.file.num_ready_bytes()?;
+                    //(std::cmp::max(ready, 1), sub)
+                    (sub.file.num_ready_bytes()?, sub)
                 }
                 Subscription::Write(sub) => (0, sub),
                 _ => unreachable!(),
@@ -67,9 +76,30 @@ pub async fn poll_oneoff<'a>(poll: &mut Poll<'a>) -> Result<(), Error> {
                 rwsub.error(Error::io());
             } else if revents.contains(PollFlags::HUP) {
                 rwsub.complete(nbytes, RwEventFlags::HANGUP);
-            } else {
-                rwsub.complete(nbytes, RwEventFlags::empty());
-            };
+            }
+            // else {
+            //     rwsub.complete(nbytes, RwEventFlags::empty());
+            // };
+
+            if revents.contains(PollFlags::IN) {
+                //println!("Got IN for {}", i);
+                match rwsub_general {
+                    Subscription::Read(rwsub) => {
+                        rwsub.complete(nbytes, RwEventFlags::empty());
+                    }
+                    _ => {}
+                }
+            }
+
+            if revents.contains(PollFlags::OUT) {
+                //println!("Got OUT for {}", i);
+                match rwsub_general {
+                    Subscription::Write(rwsub) => {
+                        rwsub.complete(nbytes, RwEventFlags::empty());
+                    }
+                    _ => {}
+                }
+            }
         }
     } else {
         poll.earliest_clock_deadline()
