@@ -5,7 +5,6 @@ use wasi_common::sched::subscription::{RwEventFlags, Subscription};
 use wasi_common::{sched::Poll, Error, ErrorExt};
 
 pub async fn poll_oneoff<'a>(poll: &mut Poll<'a>) -> Result<(), Error> {
-    println!("Starting to poll");
     if poll.is_empty() {
         return Ok(());
     }
@@ -110,6 +109,5 @@ pub async fn poll_oneoff<'a>(poll: &mut Poll<'a>) -> Result<(), Error> {
             .unwrap()
     }
 
-    println!("Done polling");
     Ok(())
 }
